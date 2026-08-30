@@ -1,0 +1,26 @@
+{
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "NodeNext",
+    "moduleResolution": "NodeNext",
+    "lib": ["ES2022", "DOM", "DOM.Iterable"],
+    "jsx": "react-jsx",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "exactOptionalPropertyTypes": true,
+    "noImplicitOverride": true,
+    "noFallthroughCasesInSwitch": true,
+    "useUnknownInCatchVariables": true,
+    "verbatimModuleSyntax": true,
+    "isolatedModules": true,
+    "skipLibCheck": true,
+    "types": ["vitest/globals"],
+    "paths": {
+      "@byteowlz/oqto-app-sdk": ["./src/index.ts"],
+      "@byteowlz/oqto-app-sdk/host": ["./src/host.ts"],
+      "@byteowlz/oqto-app-sdk/react": ["./src/react.tsx"],
+      "@byteowlz/oqto-app-sdk/testing": ["./src/testing.ts"]
+    }
+  },
+  "include": ["src", "tests", "examples"]
+}

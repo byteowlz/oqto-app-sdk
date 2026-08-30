@@ -1,0 +1,30 @@
+export { connectOqtoApp, type ConnectOqtoAppOptions } from "./connect.js";
+export { isOqtoAppError, OqtoAppError, type OqtoAppErrorCode } from "./errors.js";
+export { applyOqtoTheme } from "./theme.js";
+export {
+  OQTO_APP_PROTOCOL,
+  type JsonValue,
+  type OqtoBoundResource,
+  type OqtoCapability,
+  type OqtoCloseReason,
+  type OqtoColorScheme,
+  type OqtoFileChange,
+  type OqtoFileContents,
+  type OqtoFileDescriptor,
+  type OqtoFilePickOptions,
+  type OqtoFileRef,
+  type OqtoFilesCapability,
+  type OqtoFileStat,
+  type OqtoFileVersion,
+  type OqtoFileWriteResult,
+  type OqtoHost,
+  type OqtoHostContext,
+  type OqtoKvCapability,
+  type OqtoNotification,
+  type OqtoNotificationLevel,
+  type OqtoNotificationsCapability,
+  type OqtoResourceAccess,
+  type OqtoThemeCapability,
+  type OqtoThemeSnapshot,
+  type OqtoUnsubscribe,
+} from "./types.js";

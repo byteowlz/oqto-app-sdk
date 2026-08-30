@@ -1,0 +1,85 @@
+{
+  "name": "@byteowlz/oqto-app-sdk",
+  "version": "0.1.0",
+  "description": "Typed, capability-based SDK for sandboxed Oqto Apps",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/byteowlz/oqto-app-sdk.git"
+  },
+  "bugs": {
+    "url": "https://github.com/byteowlz/oqto-app-sdk/issues"
+  },
+  "homepage": "https://github.com/byteowlz/oqto-app-sdk#readme",
+  "type": "module",
+  "sideEffects": false,
+  "files": [
+    "dist",
+    "src",
+    "CHANGELOG.md",
+    "CONTEXT.md",
+    "README.md",
+    "SECURITY.md",
+    "LICENSE"
+  ],
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.js",
+      "default": "./dist/index.js"
+    },
+    "./host": {
+      "types": "./dist/host.d.ts",
+      "import": "./dist/host.js",
+      "default": "./dist/host.js"
+    },
+    "./testing": {
+      "types": "./dist/testing.d.ts",
+      "import": "./dist/testing.js",
+      "default": "./dist/testing.js"
+    },
+    "./react": {
+      "types": "./dist/react.d.ts",
+      "import": "./dist/react.js",
+      "default": "./dist/react.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "scripts": {
+    "clean": "rm -rf dist",
+    "build": "pnpm clean && tsc -p tsconfig.build.json",
+    "typecheck": "tsc -p tsconfig.json --noEmit",
+    "format": "biome format --write .",
+    "format:check": "biome format .",
+    "lint": "biome lint .",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "pack:check": "pnpm build && publint && attw --pack . --profile esm-only",
+    "check": "pnpm format:check && pnpm lint && pnpm typecheck && pnpm test && pnpm pack:check"
+  },
+  "peerDependencies": {
+    "react": ">=18.2.0 <20"
+  },
+  "peerDependenciesMeta": {
+    "react": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@arethetypeswrong/cli": "0.18.5",
+    "@biomejs/biome": "2.5.11",
+    "@types/react": "19.2.18",
+    "publint": "0.3.24",
+    "react": "19.2.8",
+    "typescript": "7.0.2",
+    "vitest": "4.1.11"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "packageManager": "pnpm@11.3.0",
+  "license": "MIT",
+  "publishConfig": {
+    "access": "public",
+    "provenance": true
+  }
+}
