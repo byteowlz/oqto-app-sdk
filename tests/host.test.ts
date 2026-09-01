@@ -10,6 +10,7 @@ const context: OqtoHostContext = {
   installationId: "installation",
   definitionId: "definition",
   capabilities: ["files"],
+  grants: { capabilities: ["files"], resources: [], operations: [] },
 };
 
 interface RawResult {

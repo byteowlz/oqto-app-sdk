@@ -56,7 +56,16 @@ describe("iframe handshake", () => {
     const bridge = await attaching;
 
     expect(targetOrigin).toBe("https://hash.apps.example.test");
-    expect(sent).toMatchObject({ kind: "oqto.app.connect", nonce: "nonce-1", context: adapter.context });
+    // This readiness message carries no version offer, exactly as a bundle
+    // built against the first SDK release would, so the host must fall back to
+    // v0 rather than assuming the newer contract.
+    expect(sent).toMatchObject({
+      kind: "oqto.app.connect",
+      nonce: "nonce-1",
+      protocol: OQTO_APP_PROTOCOL,
+      context: { ...adapter.context, protocol: OQTO_APP_PROTOCOL },
+    });
+    expect(bridge.protocol).toBe(OQTO_APP_PROTOCOL);
     expect(transferred).toHaveLength(1);
     transferred[0]?.close();
     bridge.close();
@@ -77,7 +86,7 @@ describe("iframe handshake", () => {
           childEvents.dispatchEvent(
             messageEvent({
               data: {
-                protocol: OQTO_APP_PROTOCOL,
+                protocol: adapter.context.protocol,
                 kind: "oqto.app.connect",
                 nonce: "some-other-handshake",
                 context: adapter.context,
@@ -91,7 +100,7 @@ describe("iframe handshake", () => {
           childEvents.dispatchEvent(
             messageEvent({
               data: {
-                protocol: OQTO_APP_PROTOCOL,
+                protocol: adapter.context.protocol,
                 kind: "oqto.app.connect",
                 nonce: message.nonce,
                 context: adapter.context,

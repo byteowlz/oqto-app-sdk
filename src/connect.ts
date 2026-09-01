@@ -7,7 +7,12 @@ import {
   READY_KIND,
   type ReadyMessage,
 } from "./internal/protocol.js";
-import { OQTO_APP_PROTOCOL, type OqtoHost } from "./types.js";
+import {
+  OQTO_APP_PROTOCOL,
+  OQTO_APP_PROTOCOL_VERSIONS,
+  type OqtoHost,
+  type OqtoProtocolVersion,
+} from "./types.js";
 
 export interface ConnectOqtoAppOptions {
   /**
@@ -18,13 +23,20 @@ export interface ConnectOqtoAppOptions {
   readonly handshakeTimeoutMs?: number;
   readonly requestTimeoutMs?: number;
   readonly signal?: AbortSignal;
+  /**
+   * Protocol versions to offer, newest first. Defaults to everything this SDK
+   * speaks. Narrow it only to pin an App to an older contract on purpose.
+   */
+  readonly supportedVersions?: readonly OqtoProtocolVersion[];
 }
 
 /**
  * Connect a sandboxed-web App to its Oqto host.
  *
- * The app announces readiness to its exact parent origin. The host responds
- * once with a nonce-bound MessagePort; all later traffic uses only that port.
+ * The app announces readiness to its exact parent origin, offering the protocol
+ * versions it speaks. The host responds once with a nonce-bound MessagePort and
+ * the version it selected; all later traffic uses only that port and version.
+ * A host that predates negotiation simply answers `oqto-app/v0`.
  */
 export async function connectOqtoApp(options: ConnectOqtoAppOptions = {}): Promise<OqtoHost> {
   if (typeof window === "undefined" || typeof document === "undefined") {
@@ -35,6 +47,7 @@ export async function connectOqtoApp(options: ConnectOqtoAppOptions = {}): Promi
   }
 
   const hostOrigin = resolveHostOrigin(options.hostOrigin);
+  const supportedVersions = resolveSupportedVersions(options.supportedVersions);
   const nonce = newNonce();
   const timeoutMs = options.handshakeTimeoutMs ?? 10_000;
 
@@ -52,12 +65,8 @@ export async function connectOqtoApp(options: ConnectOqtoAppOptions = {}): Promi
       finish(() => reject(new OqtoAppError("cancelled", "Oqto host connection cancelled")));
     const onMessage = (event: MessageEvent<unknown>) => {
       if (event.source !== window.parent || event.origin !== hostOrigin) return;
-      if (
-        !isRecord(event.data) ||
-        event.data.protocol !== OQTO_APP_PROTOCOL ||
-        event.data.kind !== CONNECT_KIND ||
-        event.data.nonce !== nonce
-      ) {
+      // The nonce, not the version, decides whether this reply is ours.
+      if (!isRecord(event.data) || event.data.kind !== CONNECT_KIND || event.data.nonce !== nonce) {
         for (const port of event.ports) port.close();
         return;
       }
@@ -68,7 +77,7 @@ export async function connectOqtoApp(options: ConnectOqtoAppOptions = {}): Promi
         return;
       }
       try {
-        const message = parseConnectMessage(event.data, nonce);
+        const message = parseConnectMessage(event.data, nonce, supportedVersions);
         finish(() =>
           resolve(
             connectOqtoAppPort(
@@ -94,7 +103,14 @@ export async function connectOqtoApp(options: ConnectOqtoAppOptions = {}): Promi
     }
     options.signal?.addEventListener("abort", onAbort, { once: true });
     window.addEventListener("message", onMessage);
-    const ready: ReadyMessage = { protocol: OQTO_APP_PROTOCOL, kind: READY_KIND, nonce };
+    // The envelope keeps the v0 tag so hosts predating negotiation still parse
+    // it; `supportedVersions` is the additive offer newer hosts read.
+    const ready: ReadyMessage = {
+      protocol: OQTO_APP_PROTOCOL,
+      kind: READY_KIND,
+      nonce,
+      supportedVersions,
+    };
     try {
       window.parent.postMessage(ready, hostOrigin);
     } catch (error) {
@@ -103,6 +119,17 @@ export async function connectOqtoApp(options: ConnectOqtoAppOptions = {}): Promi
       );
     }
   });
+}
+
+function resolveSupportedVersions(
+  explicit: readonly OqtoProtocolVersion[] | undefined,
+): readonly OqtoProtocolVersion[] {
+  if (explicit === undefined) return OQTO_APP_PROTOCOL_VERSIONS;
+  const offered = OQTO_APP_PROTOCOL_VERSIONS.filter((version) => explicit.includes(version));
+  if (offered.length === 0) {
+    throw new OqtoAppError("invalid", "supportedVersions must include a protocol this SDK speaks");
+  }
+  return offered;
 }
 
 function resolveHostOrigin(explicit: string | undefined): string {

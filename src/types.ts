@@ -1,4 +1,16 @@
+/** Handshake protocol tag. Also the negotiated version for v0 hosts. */
 export const OQTO_APP_PROTOCOL = "oqto-app/v0" as const;
+
+/** Negotiated protocol adding operations, multi-resource files, and presentation. */
+export const OQTO_APP_PROTOCOL_V1 = "oqto-app/v1" as const;
+
+/**
+ * Versions this SDK can speak, newest first. The host picks one; an older host
+ * that ignores the offer keeps the v0 behaviour it already implements.
+ */
+export const OQTO_APP_PROTOCOL_VERSIONS = [OQTO_APP_PROTOCOL_V1, OQTO_APP_PROTOCOL] as const;
+
+export type OqtoProtocolVersion = (typeof OQTO_APP_PROTOCOL_VERSIONS)[number];
 
 /** A JSON value accepted by transport-neutral capabilities such as KV. */
 export type JsonValue =
@@ -24,7 +36,8 @@ export type OqtoFileRef = string & { readonly [fileRefBrand]: true };
 /** Opaque freshness token. Compare only for equality; never parse or order it. */
 export type OqtoFileVersion = string & { readonly [fileVersionBrand]: true };
 
-export type OqtoCapability = "files" | "kv" | "theme" | "notifications";
+export type OqtoCapability = "files" | "kv" | "theme" | "notifications" | "operations" | "presentation";
+
 export type OqtoResourceAccess = "read" | "readwrite";
 
 export interface OqtoFileDescriptor {
@@ -39,15 +52,90 @@ export interface OqtoBoundResource extends OqtoFileDescriptor {
   readonly role: "document";
 }
 
+/** Whether a granted resource holds bytes or contains other resources. */
+export type OqtoResourceKind = "document" | "collection";
+
+/**
+ * One resource the host actually granted, named by the App's own role.
+ *
+ * The role is the semantic name from the manifest request (`outputs`, `jobs`);
+ * the ref is opaque identity. Neither is a host path.
+ */
+export interface OqtoGrantedResource extends OqtoFileDescriptor {
+  readonly role: string;
+  readonly kind: OqtoResourceKind;
+  /** True when the host will deliver change events for this resource. */
+  readonly watch: boolean;
+}
+
+/** One pinned operation the host granted, with the author's own description. */
+export interface OqtoGrantedOperation {
+  readonly id: string;
+  readonly summary?: string;
+}
+
+/**
+ * Exactly what this mount may do.
+ *
+ * A manifest request is not a grant: this snapshot reflects the live decision,
+ * so an App should drive its interface from here rather than from what it asked
+ * for. The host re-checks every call regardless.
+ */
+export interface OqtoGrantSnapshot {
+  readonly capabilities: readonly OqtoCapability[];
+  readonly resources: readonly OqtoGrantedResource[];
+  readonly operations: readonly OqtoGrantedOperation[];
+}
+
+export type OqtoPresentationSurface = "inline" | "container" | "fullscreen" | "window";
+
+/** Coarse width band. Apps should branch on this, never on a raw pixel guess. */
+export type OqtoSizeClass = "compact" | "regular" | "expanded";
+
+export type OqtoDensity = "comfortable" | "compact";
+
+export interface OqtoEdgeInsets {
+  readonly top: number;
+  readonly right: number;
+  readonly bottom: number;
+  readonly left: number;
+}
+
+/**
+ * The container an App is rendered into, which is not the browser viewport.
+ *
+ * An App may be mounted in a narrow split pane, a phone-sized sheet, or a
+ * fullscreen surface. Sizing against `window.innerWidth` is wrong; size against
+ * this instead.
+ */
+export interface OqtoPresentationContext {
+  readonly surface: OqtoPresentationSurface;
+  /** Container width in CSS pixels. */
+  readonly width: number;
+  /** Container height in CSS pixels. */
+  readonly height: number;
+  readonly sizeClass: OqtoSizeClass;
+  readonly density: OqtoDensity;
+  readonly safeArea: OqtoEdgeInsets;
+  readonly reducedMotion: boolean;
+}
+
 export interface OqtoHostContext {
-  readonly protocol: typeof OQTO_APP_PROTOCOL;
+  readonly protocol: OqtoProtocolVersion;
   readonly instanceId: string;
   readonly installationId: string;
   readonly definitionId: string;
   /** Capabilities granted for this mount, not merely requested by its manifest. */
   readonly capabilities: readonly OqtoCapability[];
+  /**
+   * Full grant detail. On a v0 host this is synthesized from `capabilities`
+   * with empty resource and operation lists.
+   */
+  readonly grants: OqtoGrantSnapshot;
   /** Immutable for the lifetime of a mount. Rebinding creates a new mount. */
   readonly bound?: OqtoBoundResource;
+  /** Mount-time container snapshot. Absent on v0 hosts. */
+  readonly presentation?: OqtoPresentationContext;
 }
 
 export interface OqtoFilePickOptions {
@@ -73,6 +161,35 @@ export interface OqtoFileContents extends OqtoFileStat {
 export interface OqtoFileChange {
   readonly ref: OqtoFileRef;
   readonly version: OqtoFileVersion;
+  /**
+   * Monotonic per-subscription sequence number. Absent on v0 hosts.
+   *
+   * A jump larger than one means the host coalesced events; `gap` states that
+   * explicitly so an App can re-read instead of assuming it observed every
+   * intermediate version.
+   */
+  readonly generation?: number;
+  /** True when events were coalesced or dropped before this one. */
+  readonly gap?: boolean;
+}
+
+/** One entry inside a granted collection resource. */
+export interface OqtoFileEntry extends OqtoFileDescriptor {
+  readonly version: OqtoFileVersion;
+  readonly size: number;
+  readonly modifiedAt?: string;
+}
+
+export interface OqtoFileListOptions {
+  /** Opaque continuation token from a previous page. Never parse it. */
+  readonly cursor?: string;
+  readonly limit?: number;
+}
+
+export interface OqtoFileListPage {
+  readonly entries: readonly OqtoFileEntry[];
+  /** Present when more entries remain. */
+  readonly cursor?: string;
 }
 
 export type OqtoFileWriteResult =
@@ -104,6 +221,64 @@ export interface OqtoFilesCapability {
   ): Promise<OqtoFileWriteResult>;
   /** Events may coalesce to the newest version. They never contain file bytes. */
   watch(ref: OqtoFileRef, listener: (change: OqtoFileChange) => void): Promise<OqtoUnsubscribe>;
+  /**
+   * Granted resources by role. Requires a v1 host; a v0 host rejects with
+   * `unsupported`.
+   */
+  resources(): Promise<readonly OqtoGrantedResource[]>;
+  /** Enumerate a granted collection resource. Requires a v1 host. */
+  list(ref: OqtoFileRef, options?: OqtoFileListOptions): Promise<OqtoFileListPage>;
+  /**
+   * Observe several resources through one subscription. Requires a v1 host.
+   *
+   * Changes carry `generation` and `gap` so a listener can tell a coalesced
+   * stream from a complete one.
+   */
+  watchResources(
+    refs: readonly OqtoFileRef[],
+    listener: (change: OqtoFileChange) => void,
+  ): Promise<OqtoUnsubscribe>;
+}
+
+export interface OqtoOperationInvokeOptions {
+  readonly signal?: AbortSignal;
+  readonly timeoutMs?: number;
+}
+
+/**
+ * An operation that ran and reported failure. This is an outcome, not a
+ * transport or authorization error, so it is returned rather than thrown.
+ */
+export interface OqtoOperationFailure {
+  readonly ok: false;
+  readonly reason: "failed";
+  /** Stable host- or App-defined failure code, never a raw exit status string. */
+  readonly code: string;
+  readonly message: string;
+}
+
+export interface OqtoOperationSuccess {
+  readonly ok: true;
+  readonly output: JsonValue;
+}
+
+export type OqtoOperationResult = OqtoOperationSuccess | OqtoOperationFailure;
+
+/**
+ * Typed client for pinned semantic operations.
+ *
+ * The App names an operation id and passes JSON. It never sees an executable,
+ * argument vector, environment, or endpoint; the runner resolves those from the
+ * immutable Definition under the bound Principal.
+ */
+export interface OqtoOperationsCapability {
+  list(): Promise<readonly OqtoGrantedOperation[]>;
+  invoke(id: string, input?: JsonValue, options?: OqtoOperationInvokeOptions): Promise<OqtoOperationResult>;
+}
+
+export interface OqtoPresentationCapability {
+  get(): Promise<OqtoPresentationContext>;
+  watch(listener: (context: OqtoPresentationContext) => void): Promise<OqtoUnsubscribe>;
 }
 
 export interface OqtoKvCapability {
@@ -136,15 +311,39 @@ export interface OqtoNotificationsCapability {
   notify(notification: OqtoNotification): Promise<void>;
 }
 
+/** Why a mount lost its authority. */
+export type OqtoSuspensionReason = "revoked" | "suspended" | "uninstalled" | "definition_changed";
+
+/**
+ * Authority withdrawal announced by the host.
+ *
+ * Suspension is immediate and terminal for this mount: pending calls reject and
+ * later calls reject without reaching the host. Regaining access requires a new
+ * decision and a fresh mount.
+ */
+export interface OqtoSuspension {
+  readonly reason: OqtoSuspensionReason;
+  readonly message?: string;
+}
+
 export type OqtoCloseReason = "app" | "host" | "transport";
 
 /** The complete granted interface presented to an app mount. */
 export interface OqtoHost {
   readonly context: OqtoHostContext;
+  /** Version actually negotiated with this host. */
+  readonly protocol: OqtoProtocolVersion;
   readonly files?: OqtoFilesCapability;
   readonly kv?: OqtoKvCapability;
   readonly theme?: OqtoThemeCapability;
   readonly notifications?: OqtoNotificationsCapability;
+  readonly operations?: OqtoOperationsCapability;
+  readonly presentation?: OqtoPresentationCapability;
   readonly closed: Promise<OqtoCloseReason>;
+  /** Resolves once the host withdraws authority. Never rejects. */
+  readonly suspension: Promise<OqtoSuspension>;
+  /** Synchronous suspension check for render paths. */
+  isSuspended(): OqtoSuspension | undefined;
+  onSuspended(listener: (suspension: OqtoSuspension) => void): OqtoUnsubscribe;
   close(): void;
 }

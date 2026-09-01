@@ -6,6 +6,8 @@ export type OqtoAppErrorCode =
   | "internal"
   | "invalid"
   | "quota_exceeded"
+  /** Authority was withdrawn while this mount was live. */
+  | "suspended"
   | "timeout"
   | "too_large"
   | "unsupported";

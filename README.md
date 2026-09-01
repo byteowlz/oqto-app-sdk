@@ -4,11 +4,16 @@ Typed, capability-based interface for sandboxed-web [Oqto](https://github.com/by
 
 The SDK is intentionally small: apps receive opaque resource refs and granted capabilities over a nonce-bound `MessagePort`. They never receive host paths, Oqto credentials, filesystem mounts, or control sockets.
 
-Sandboxed-web Apps require a **real distinct, non-opaque origin** such as `<definition-hash>.apps.example.com`. The iframe therefore uses `sandbox="allow-scripts allow-same-origin"`; isolation comes from the dedicated hostname, host-only Oqto cookies, CSP, and the capability Bridge. Opaque `null` origins and wildcard `postMessage` targets deliberately fail closed.
+Two frame isolation models are supported, and the SDK never assumes either one:
+
+- **Distinct origin** (`<definition-hash>.apps.example.com`) with `sandbox="allow-scripts allow-same-origin"`. Isolation comes from the dedicated hostname, host-only cookies, CSP, and the Bridge. `attachOqtoAppFrame` implements this handshake and requires an exact, non-opaque origin; wildcards and `null` fail closed.
+- **Opaque origin** (`srcdoc` with `sandbox="allow-scripts"`, no `allow-same-origin`). The document has no origin of its own, so there is nothing for an origin check to match. A host using this model must create the `MessageChannel` itself and serve it with `serveOqtoAppPort`, delivering the port through its own trusted path rather than through the origin handshake. See [Host integration](#host-integration).
 
 ## Status
 
-`0.1.0` is the first contract release. The SDK and deterministic test host are implemented; Oqto's live discovery/origin/Gate adapters are tracked separately. Do not mistake a manifest capability request for a live grant.
+`0.2.0` adds the negotiated `oqto-app/v1` surface: granted capability snapshots, semantic operations, multi-resource files with gap-aware watchers, presentation context, and immediate suspension. The handshake still announces `oqto-app/v0`, so a 0.1.0 App and a pre-negotiation host interoperate with the newer counterpart unchanged.
+
+Do not mistake a manifest capability request for a live grant. `context.grants` is the decision; the trusted host re-checks every call regardless.
 
 ## Install
 
@@ -69,6 +74,72 @@ const unsubscribe = await host.files.watch(bound.ref, ({ version }) => {
 
 `stat` is the polling fallback. `watch` is the event-driven path; change events contain no bytes and may coalesce.
 
+## Granted capabilities
+
+`context.grants` is the live decision, not the manifest request. Drive the interface from it:
+
+```ts
+for (const resource of host.context.grants.resources) {
+  // resource.role is the App's own name ("outputs"); resource.ref is opaque.
+  console.log(resource.role, resource.kind, resource.access, resource.watch);
+}
+for (const operation of host.context.grants.operations) {
+  console.log(operation.id, operation.summary);
+}
+```
+
+On a v0 mount the snapshot degrades to the capability list with empty resource and operation detail, so branch on `host.protocol` if an App must support both.
+
+## Semantic operations
+
+```ts
+const result = await host.operations?.invoke("comfy.generate.submit", {
+  workflow: "sdxl",
+  prompt: "a red bicycle",
+});
+
+if (result?.ok) console.log(result.output);
+else console.warn(result?.code, result?.message);
+```
+
+The App names an operation id and passes JSON. It never sees an executable, argument vector, environment, or endpoint. An operation that ran and failed is a **value**; denial, suspension, timeout, and transport failure are **exceptions**. Pass an `AbortSignal` to cancel.
+
+## Multi-resource files and gap-aware watchers
+
+```ts
+const outputs = host.context.grants.resources.find((entry) => entry.role === "outputs");
+if (outputs && host.files) {
+  const page = await host.files.list(outputs.ref, { limit: 50 });
+
+  await host.files.watchResources([outputs.ref], (change) => {
+    if (change.gap) {
+      // The host coalesced or dropped events; re-read rather than assuming
+      // every intermediate version was observed.
+    }
+  });
+}
+```
+
+`generation` is a monotonic per-subscription sequence and `gap` marks a discontinuity. Both are absent on a v0 host, where nothing about completeness can be inferred.
+
+## Presentation context
+
+```ts
+const layout = await host.presentation?.get();
+// layout.width / layout.height describe the CONTAINER, not the viewport.
+await host.presentation?.watch((next) => applyLayout(next.sizeClass, next.safeArea));
+```
+
+An App may be mounted in a narrow split pane, a phone-sized sheet, or a fullscreen surface. Sizing against `window.innerWidth` is wrong; size against this and its `sizeClass`, `density`, `safeArea`, and `reducedMotion`.
+
+## Suspension
+
+```ts
+host.onSuspended(({ reason }) => renderReadOnlyNotice(reason));
+```
+
+A host may withdraw authority mid-mount when a grant is revoked, an Instance is suspended, or an App is uninstalled. Pending calls reject, later calls never reach the host, and subscriptions stop. Regaining access requires a new decision and a fresh mount, so render an explanation rather than retrying.
+
 ## Deterministic tests
 
 ```ts
@@ -109,16 +180,38 @@ The client exposes only granted capabilities, and the trusted host checks `conte
 
 The owner of the iframe must call `bridge.close()` when the frame unmounts or navigates; DOM removal is not itself a reliable MessagePort liveness signal. A timed-out write is indeterminate: call `stat`, compare versions, and re-read rather than blindly retrying.
 
+### Opaque-origin frames
+
+A `srcdoc` frame without `allow-same-origin` reports `event.origin === "null"`, which `attachOqtoAppFrame` rejects on purpose. Serve those frames directly instead, delivering `port2` through a path the host already trusts:
+
+```ts
+import { serveOqtoAppPort } from "@byteowlz/oqto-app-sdk/host";
+
+const channel = new MessageChannel();
+const bridge = serveOqtoAppPort(grantedAdapter, channel.port1);
+frame.contentWindow!.postMessage(connectMessage, "*", [channel.port2]);
+```
+
+`"*"` is unavoidable when the receiver has no origin to name, so the host must bind the exchange some other way: transfer exactly one port, accept a reply only from that port, and never reuse it across mounts. The port itself is the capability.
+
+### Withdrawing authority
+
+```ts
+bridge.suspend({ reason: "revoked" });
+```
+
+Call this the moment a grant is revoked or an Instance is suspended. The bridge releases live subscriptions, refuses in-flight and later requests before they reach the adapter, and notifies the App. Closing the bridge afterwards is optional.
+
 ## Package modules
 
 - `@byteowlz/oqto-app-sdk`: contracts, errors, theme helper, app-side connection
 - `@byteowlz/oqto-app-sdk/host`: host-side frame and MessagePort adapters
 - `@byteowlz/oqto-app-sdk/testing`: deterministic in-memory conformance host
-- `@byteowlz/oqto-app-sdk/react`: optional provider and hook
+- `@byteowlz/oqto-app-sdk/react`: optional provider and hooks
 
-## Deferred from v0
+## Deferred
 
-Directory traversal, create/delete/rename, range/streaming I/O, cross-file transactions, locks, dynamic rebinding, runtime permission prompts, agent RPC, and WebMCP. These can be additive without weakening the initial document contract.
+Create/delete/rename, range/streaming I/O, cross-file transactions, locks, dynamic rebinding, in-frame permission prompts, agent RPC, and WebMCP. Permission decisions stay outside the App frame by design: an App can observe that it was suspended, never request its own grant.
 
 ## Development
 
@@ -127,4 +220,4 @@ pnpm install
 pnpm check
 ```
 
-`pnpm check` runs formatting, linting, strict typechecking, handshake/protocol/concurrency tests, package build, `publint`, and `arethetypeswrong`.
+`pnpm check` runs formatting, linting, strict typechecking, handshake/protocol/negotiation/capability/suspension/React tests, package build, `publint`, and `arethetypeswrong`.
