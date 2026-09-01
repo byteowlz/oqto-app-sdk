@@ -258,7 +258,7 @@ export function serveOqtoAppPort(
       closeAs("app", false);
       return;
     }
-    if (!isRequestMessage(request) || didClose) return;
+    if (!isRequestMessage(request) || request.protocol !== protocol || didClose) return;
     if (suspension !== undefined) {
       sendResult({
         protocol,

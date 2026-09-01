@@ -176,6 +176,7 @@ class RpcClient {
   }
 
   private receive(value: unknown): void {
+    if (!isRecord(value) || value.protocol !== this.protocol) return;
     if (isResultMessage(value)) {
       const pending = this.pending.get(value.id);
       if (!pending) return;

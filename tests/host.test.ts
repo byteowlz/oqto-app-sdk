@@ -18,7 +18,13 @@ interface RawResult {
   readonly error?: { readonly code?: string };
 }
 
-function request(port: MessagePort, id: number, method: string, params: unknown): Promise<RawResult> {
+function request(
+  port: MessagePort,
+  protocol: OqtoHostContext["protocol"],
+  id: number,
+  method: string,
+  params: unknown,
+): Promise<RawResult> {
   return new Promise((resolve) => {
     const listener = (event: MessageEvent<unknown>) => {
       const value = event.data;
@@ -37,7 +43,7 @@ function request(port: MessagePort, id: number, method: string, params: unknown)
     };
     port.addEventListener("message", listener);
     port.start();
-    port.postMessage({ protocol: OQTO_APP_PROTOCOL, kind: "request", id, method, params });
+    port.postMessage({ protocol, kind: "request", id, method, params });
   });
 }
 
@@ -67,7 +73,9 @@ describe("host adapter", () => {
     const channel = new MessageChannel();
     const bridge = serveOqtoAppPort(adapter, channel.port1);
 
-    const result = await request(channel.port2, 1, "files.read", { ref: "oqto-test:secret" });
+    const result = await request(channel.port2, adapter.context.protocol, 1, "files.read", {
+      ref: "oqto-test:secret",
+    });
     expect(result).toMatchObject({ ok: false, error: { code: "denied" } });
 
     bridge.close();
@@ -93,7 +101,7 @@ describe("host adapter", () => {
     const channel = new MessageChannel();
     const bridge = serveOqtoAppPort(adapter, channel.port1);
     channel.port2.postMessage({
-      protocol: OQTO_APP_PROTOCOL,
+      protocol: adapter.context.protocol,
       kind: "request",
       id: 1,
       method: "files.watch.start",
@@ -112,12 +120,12 @@ describe("host adapter", () => {
     const channel = new MessageChannel();
     const bridge = serveOqtoAppPort(test.adapter, channel.port1, { maxSubscriptions: 1 });
 
-    const first = await request(channel.port2, 1, "files.watch.start", {
+    const first = await request(channel.port2, test.adapter.context.protocol, 1, "files.watch.start", {
       ref: "oqto-test:scene",
       subscriptionId: "watch-1",
     });
     expect(first.ok).toBe(true);
-    const second = await request(channel.port2, 2, "files.watch.start", {
+    const second = await request(channel.port2, test.adapter.context.protocol, 2, "files.watch.start", {
       ref: "oqto-test:scene",
       subscriptionId: "watch-2",
     });
@@ -147,14 +155,14 @@ describe("host adapter", () => {
     const params = { ref: "oqto-test:scene", subscriptionId: "duplicate" };
 
     channel.port2.postMessage({
-      protocol: OQTO_APP_PROTOCOL,
+      protocol: adapter.context.protocol,
       kind: "request",
       id: 1,
       method: "files.watch.start",
       params,
     });
     await vi.waitFor(() => expect(watch).toHaveBeenCalledOnce());
-    const duplicate = await request(channel.port2, 2, "files.watch.start", params);
+    const duplicate = await request(channel.port2, adapter.context.protocol, 2, "files.watch.start", params);
     expect(duplicate).toMatchObject({ ok: false, error: { code: "invalid" } });
     expect(watch).toHaveBeenCalledOnce();
 
