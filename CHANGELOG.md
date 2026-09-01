@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.0 — unreleased
+
+Adds negotiated `oqto-app/v2` and ADR-0044 Agent Context. App Definitions can expose unfamiliar domain topics through a platform-neutral catalog; Apps can publish, clear, read, and resume watches of bounded context values without injecting Chat messages or waking a model. Contextual mutations are separate revision-bound actions with typed stale-context outcomes. The host remains authoritative for schemas, revisions, authorization, disclosure, reconnect gaps, and revocation. React adds `useOqtoContextTopic`. v0/v1 mounts continue to negotiate and reject v2-only methods explicitly.
+
 ## 0.2.0 — unreleased
 
 Adds the `oqto-app/v1` capability surface. The handshake still announces itself

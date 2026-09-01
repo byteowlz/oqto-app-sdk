@@ -2,6 +2,10 @@ import { OqtoAppError } from "../errors.js";
 import {
   OQTO_APP_PROTOCOL,
   type JsonValue,
+  type OqtoAgentContextCatalog,
+  type OqtoContextActionResult,
+  type OqtoContextChange,
+  type OqtoContextSnapshot,
   type OqtoFileChange,
   type OqtoFileContents,
   type OqtoFileDescriptor,
@@ -40,6 +44,7 @@ import {
   parsePresentation,
   parseSuspension,
   supportsV1,
+  supportsV2,
   type RequestMessage,
 } from "./protocol.js";
 
@@ -244,11 +249,20 @@ export function connectOqtoAppPort(
   const has = (capability: (typeof context.capabilities)[number]) =>
     context.capabilities.includes(capability);
   const v1 = supportsV1(protocol);
+  const v2 = supportsV2(protocol);
   const requireV1 = (feature: string): void => {
     if (!v1) {
       throw new OqtoAppError(
         "unsupported",
         `${feature} requires protocol ${"oqto-app/v1"}; this host negotiated ${protocol}`,
+      );
+    }
+  };
+  const requireV2 = (feature: string): void => {
+    if (!v2) {
+      throw new OqtoAppError(
+        "unsupported",
+        `${feature} requires protocol ${"oqto-app/v2"}; this host negotiated ${protocol}`,
       );
     }
   };
@@ -412,6 +426,74 @@ export function connectOqtoAppPort(
       }
     : undefined;
 
+  const agentContext = has("agent_context")
+    ? {
+        async catalog(): Promise<OqtoAgentContextCatalog> {
+          requireV2("agentContext.catalog");
+          return parseContextCatalog(await client.request("agentContext.catalog", {}));
+        },
+        async get(topic: string): Promise<OqtoContextSnapshot | undefined> {
+          requireV2("agentContext.get");
+          const value = await client.request("agentContext.get", { topic });
+          return value === undefined ? undefined : parseContextSnapshot(value);
+        },
+        async publish(topic: string, value: JsonValue): Promise<OqtoContextSnapshot> {
+          requireV2("agentContext.publish");
+          if (!isJsonValue(value))
+            throw new OqtoAppError("invalid", "Context accepts bounded finite JSON only");
+          return parseContextSnapshot(await client.request("agentContext.publish", { topic, value }));
+        },
+        async clear(topic: string): Promise<void> {
+          requireV2("agentContext.clear");
+          await client.request("agentContext.clear", { topic });
+        },
+        async watch(
+          topics: readonly string[],
+          listener: (change: OqtoContextChange) => void,
+          watchOptions?: { readonly fromRevision?: number },
+        ): Promise<OqtoUnsubscribe> {
+          requireV2("agentContext.watch");
+          if (topics.length === 0) throw new OqtoAppError("invalid", "Context watch requires a topic");
+          let generation: number | undefined;
+          return subscribe(
+            "context-watch",
+            "agentContext.watch.stop",
+            (subscriptionId) =>
+              client.request("agentContext.watch.start", {
+                topics: [...topics],
+                subscriptionId,
+                ...(watchOptions?.fromRevision === undefined
+                  ? {}
+                  : { fromRevision: watchOptions.fromRevision }),
+              }),
+            (value) => {
+              const change = parseContextChange(value);
+              const gap = change.gap || (generation !== undefined && change.generation !== generation + 1);
+              generation = change.generation;
+              listener(gap === change.gap ? change : { ...change, gap });
+            },
+          );
+        },
+        async invokeAction(
+          id: string,
+          expectedContextRevision: number,
+          input?: JsonValue,
+        ): Promise<OqtoContextActionResult> {
+          requireV2("agentContext.invokeAction");
+          if (!Number.isSafeInteger(expectedContextRevision) || expectedContextRevision < 0) {
+            throw new OqtoAppError("invalid", "Expected context revision must be non-negative");
+          }
+          return parseContextActionResult(
+            await client.request("agentContext.action.invoke", {
+              id,
+              expectedContextRevision,
+              ...(input === undefined ? {} : { input }),
+            }),
+          );
+        },
+      }
+    : undefined;
+
   const kv = has("kv")
     ? {
         async get(key: string): Promise<JsonValue | undefined> {
@@ -463,6 +545,7 @@ export function connectOqtoAppPort(
     ...(notifications === undefined ? {} : { notifications }),
     ...(operations === undefined ? {} : { operations }),
     ...(presentation === undefined ? {} : { presentation }),
+    ...(agentContext === undefined ? {} : { agentContext }),
     closed: client.closed,
     suspension: client.suspended,
     isSuspended: () => client.suspensionOf(),
@@ -487,6 +570,119 @@ function trackGenerations(): (change: OqtoFileChange) => OqtoFileChange {
     if (previous !== undefined && change.generation > previous + 1) return { ...change, gap: true };
     return change;
   };
+}
+
+function parseContextCatalog(value: unknown): OqtoAgentContextCatalog {
+  if (
+    !isRecord(value) ||
+    typeof value.providerId !== "string" ||
+    !Array.isArray(value.topics) ||
+    !Array.isArray(value.actions)
+  ) {
+    throw invalidResponse("Agent Context catalog");
+  }
+  return {
+    providerId: value.providerId,
+    topics: value.topics.map((topic) => {
+      if (
+        !isRecord(topic) ||
+        typeof topic.id !== "string" ||
+        typeof topic.title !== "string" ||
+        typeof topic.schemaVersion !== "string" ||
+        !["ephemeral", "session_local", "durable_reference"].includes(String(topic.lifetime)) ||
+        !["ambient", "explicit_intent", "sensitive", "high_volume"].includes(String(topic.disclosure))
+      ) {
+        throw invalidResponse("Agent Context topic");
+      }
+      if (topic.description !== undefined && typeof topic.description !== "string")
+        throw invalidResponse("Agent Context topic");
+      return {
+        id: topic.id,
+        title: topic.title,
+        ...(topic.description === undefined ? {} : { description: topic.description }),
+        schemaVersion: topic.schemaVersion,
+        lifetime: topic.lifetime as "ephemeral" | "session_local" | "durable_reference",
+        disclosure: topic.disclosure as "ambient" | "explicit_intent" | "sensitive" | "high_volume",
+      };
+    }),
+    actions: value.actions.map((action) => {
+      if (
+        !isRecord(action) ||
+        typeof action.id !== "string" ||
+        typeof action.title !== "string" ||
+        !Array.isArray(action.requiredTopics) ||
+        !action.requiredTopics.every((topic) => typeof topic === "string") ||
+        typeof action.requiresUserActivation !== "boolean"
+      ) {
+        throw invalidResponse("Agent Context action");
+      }
+      if (action.description !== undefined && typeof action.description !== "string")
+        throw invalidResponse("Agent Context action");
+      return {
+        id: action.id,
+        title: action.title,
+        ...(action.description === undefined ? {} : { description: action.description }),
+        requiredTopics: action.requiredTopics,
+        requiresUserActivation: action.requiresUserActivation,
+      };
+    }),
+  };
+}
+
+function parseContextSnapshot(value: unknown): OqtoContextSnapshot {
+  if (
+    !isRecord(value) ||
+    typeof value.providerId !== "string" ||
+    typeof value.topic !== "string" ||
+    !Number.isSafeInteger(value.revision) ||
+    (value.revision as number) < 0 ||
+    typeof value.updatedAt !== "string" ||
+    !isJsonValue(value.value)
+  ) {
+    throw invalidResponse("Agent Context snapshot");
+  }
+  return {
+    providerId: value.providerId,
+    topic: value.topic,
+    revision: value.revision as number,
+    updatedAt: value.updatedAt,
+    value: value.value,
+  };
+}
+
+function parseContextChange(value: unknown): OqtoContextChange {
+  if (
+    !isRecord(value) ||
+    !Number.isSafeInteger(value.generation) ||
+    (value.generation as number) < 0 ||
+    typeof value.gap !== "boolean"
+  ) {
+    throw invalidResponse("Agent Context change");
+  }
+  return {
+    snapshot: parseContextSnapshot(value.snapshot),
+    generation: value.generation as number,
+    gap: value.gap,
+  };
+}
+
+function parseContextActionResult(value: unknown): OqtoContextActionResult {
+  if (!isRecord(value) || typeof value.ok !== "boolean") throw invalidResponse("Agent Context action");
+  if (value.ok) {
+    if (!isJsonValue(value.output)) throw invalidResponse("Agent Context action");
+    return { ok: true, output: value.output };
+  }
+  if (
+    value.reason === "stale_context" &&
+    Number.isSafeInteger(value.currentRevision) &&
+    (value.currentRevision as number) >= 0
+  ) {
+    return { ok: false, reason: "stale_context", currentRevision: value.currentRevision as number };
+  }
+  if (value.reason === "failed" && typeof value.code === "string" && typeof value.message === "string") {
+    return { ok: false, reason: "failed", code: value.code, message: value.message };
+  }
+  throw invalidResponse("Agent Context action");
 }
 
 function parseFileDescriptors(value: unknown): readonly OqtoFileDescriptor[] {

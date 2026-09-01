@@ -11,6 +11,7 @@ import {
 import { isOqtoAppError } from "./errors.js";
 import type {
   JsonValue,
+  OqtoContextSnapshot,
   OqtoGrantSnapshot,
   OqtoHost,
   OqtoOperationInvokeOptions,
@@ -109,6 +110,25 @@ export function useOqtoPresentation(): OqtoPresentationContext | undefined {
   const read = useMemo(() => presentation?.get.bind(presentation), [presentation]);
   const watch = useMemo(() => presentation?.watch.bind(presentation), [presentation]);
   return useHostSnapshot(read, watch, host.context.presentation);
+}
+
+/** Live value for one App-defined Agent Context topic. */
+export function useOqtoContextTopic(topic: string): OqtoContextSnapshot | undefined {
+  const host = useOqtoHost();
+  const context = host.agentContext;
+  const read = useMemo(
+    () => (context === undefined ? undefined : () => context.get(topic)),
+    [context, topic],
+  );
+  const watch = useMemo(
+    () =>
+      context === undefined
+        ? undefined
+        : async (listener: (value: OqtoContextSnapshot | undefined) => void) =>
+            context.watch([topic], (change) => listener(change.snapshot)),
+    [context, topic],
+  );
+  return useHostSnapshot(read, watch, undefined);
 }
 
 /**

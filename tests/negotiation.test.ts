@@ -3,6 +3,7 @@ import {
   connectOqtoApp,
   OQTO_APP_PROTOCOL,
   OQTO_APP_PROTOCOL_V1,
+  OQTO_APP_PROTOCOL_V2,
   OQTO_APP_PROTOCOL_VERSIONS,
 } from "../src/index.js";
 import { attachOqtoAppFrame } from "../src/host.js";
@@ -70,8 +71,8 @@ describe("protocol negotiation", () => {
     );
     const bridge = await attaching;
 
-    expect(bridge.protocol).toBe(OQTO_APP_PROTOCOL_V1);
-    expect(probe.sent()).toMatchObject({ protocol: OQTO_APP_PROTOCOL_V1 });
+    expect(bridge.protocol).toBe(OQTO_APP_PROTOCOL_V2);
+    expect(probe.sent()).toMatchObject({ protocol: OQTO_APP_PROTOCOL_V2 });
     probe.transferred[0]?.close();
     bridge.close();
   });

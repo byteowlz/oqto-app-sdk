@@ -12,6 +12,7 @@ import {
   serializeError,
   SUSPEND_KIND,
   supportsV1,
+  supportsV2,
   type ConnectMessage,
   type EventMessage,
   type ResultMessage,
@@ -19,6 +20,7 @@ import {
 } from "./internal/protocol.js";
 import {
   OQTO_APP_PROTOCOL_VERSIONS,
+  type OqtoAgentContextCapability,
   type OqtoCapability,
   type OqtoFileRef,
   type OqtoFilesCapability,
@@ -58,6 +60,7 @@ export interface OqtoHostAdapter {
   readonly notifications?: OqtoNotificationsCapability;
   readonly operations?: OqtoOperationsCapability;
   readonly presentation?: OqtoPresentationCapability;
+  readonly agent_context?: OqtoAgentContextCapability;
 }
 
 export interface OqtoHostBridge {
@@ -340,6 +343,11 @@ async function dispatch(
       throw new OqtoAppError("unsupported", `${method} requires a newer Oqto App protocol`);
     }
   };
+  const requireV2 = () => {
+    if (!supportsV2(protocol)) {
+      throw new OqtoAppError("unsupported", `${method} requires Oqto App protocol v2`);
+    }
+  };
   switch (method) {
     case "files.pick":
       return requireFiles(adapter).pick(parsePickOptions(input));
@@ -446,6 +454,57 @@ async function dispatch(
         port,
         protocol,
         (emit) => presentation.watch(emit),
+      );
+    }
+    case "agentContext.catalog": {
+      requireV2();
+      return requireAgentContext(adapter).catalog();
+    }
+    case "agentContext.get": {
+      requireV2();
+      return requireAgentContext(adapter).get(requireBoundedString(input, "topic", 256));
+    }
+    case "agentContext.publish": {
+      requireV2();
+      const value = input.value;
+      if (!isJsonValue(value)) throw new OqtoAppError("invalid", "Context accepts bounded finite JSON only");
+      return requireAgentContext(adapter).publish(requireBoundedString(input, "topic", 256), value);
+    }
+    case "agentContext.clear": {
+      requireV2();
+      await requireAgentContext(adapter).clear(requireBoundedString(input, "topic", 256));
+      return undefined;
+    }
+    case "agentContext.watch.start": {
+      requireV2();
+      const context = requireAgentContext(adapter);
+      const topics = parseTopics(input);
+      const fromRevision = parseOptionalRevision(input, "fromRevision");
+      return startSubscription(
+        subscriptions,
+        requireBoundedString(input, "subscriptionId", 256),
+        limits.maxSubscriptions,
+        isClosed,
+        onTransportError,
+        port,
+        protocol,
+        (emit) => context.watch(topics, emit, fromRevision === undefined ? {} : { fromRevision }),
+      );
+    }
+    case "agentContext.watch.stop":
+      requireV2();
+      stopSubscription(subscriptions, requireBoundedString(input, "subscriptionId", 256));
+      return undefined;
+    case "agentContext.action.invoke": {
+      requireV2();
+      const value = input.input;
+      if (value !== undefined && !isJsonValue(value)) {
+        throw new OqtoAppError("invalid", "Context action input accepts bounded finite JSON only");
+      }
+      return requireAgentContext(adapter).invokeAction(
+        requireBoundedString(input, "id", 256),
+        parseRevision(input, "expectedContextRevision"),
+        value,
       );
     }
     case "kv.get":
@@ -598,6 +657,12 @@ function requirePresentation(adapter: OqtoHostAdapter): OqtoPresentationCapabili
   return adapter.presentation;
 }
 
+function requireAgentContext(adapter: OqtoHostAdapter): OqtoAgentContextCapability {
+  requireCapability(adapter, "agent_context");
+  if (!adapter.agent_context) throw new OqtoAppError("denied", "Agent Context capability is not granted");
+  return adapter.agent_context;
+}
+
 function resolveHostVersions(
   explicit: readonly OqtoProtocolVersion[] | undefined,
 ): readonly OqtoProtocolVersion[] {
@@ -663,6 +728,33 @@ function requireBoundedString(input: Record<string, unknown>, key: string, maxLe
 
 function requireKey(input: Record<string, unknown>): string {
   return requireBoundedString(input, "key", 256);
+}
+
+function parseTopics(input: Record<string, unknown>): readonly string[] {
+  const topics = input.topics;
+  if (!Array.isArray(topics) || topics.length === 0 || topics.length > 64) {
+    throw new OqtoAppError("invalid", "topics must be a bounded non-empty array");
+  }
+  const values = topics.map((topic) => {
+    if (typeof topic !== "string" || topic.length === 0 || topic.length > 256) {
+      throw new OqtoAppError("invalid", "topics must contain bounded non-empty strings");
+    }
+    return topic;
+  });
+  if (new Set(values).size !== values.length) throw new OqtoAppError("invalid", "topics must be unique");
+  return values;
+}
+
+function parseRevision(input: Record<string, unknown>, key: string): number {
+  const value = input[key];
+  if (!Number.isSafeInteger(value) || (value as number) < 0) {
+    throw new OqtoAppError("invalid", `${key} must be a non-negative safe integer`);
+  }
+  return value as number;
+}
+
+function parseOptionalRevision(input: Record<string, unknown>, key: string): number | undefined {
+  return input[key] === undefined ? undefined : parseRevision(input, key);
 }
 
 function parsePickOptions(input: Record<string, unknown>): {

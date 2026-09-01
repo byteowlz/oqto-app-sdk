@@ -180,7 +180,30 @@ The client exposes only granted capabilities, and the trusted host checks `conte
 
 The owner of the iframe must call `bridge.close()` when the frame unmounts or navigates; DOM removal is not itself a reliable MessagePort liveness signal. A timed-out write is indeterminate: call `stat`, compare versions, and re-read rather than blindly retrying.
 
-### Opaque-origin frames
+### App-defined Agent Context
+
+Protocol v2 adds `host.agentContext` for ADR-0044. An App can discover its immutable topic/action catalog and publish bounded domain state such as a Gallery selection or current slide:
+
+```ts
+const snapshot = await host.agentContext?.publish("gallery.selection", {
+  selected_refs: ["image:81", "image:92"],
+  primary_ref: "image:92",
+});
+```
+
+Publishing context updates state only: it never sends a Chat message or wakes a model. Contextual mutation remains a separate semantic action and must name the revision it was based on:
+
+```ts
+await host.agentContext?.invokeAction(
+  "gallery.selection.clear",
+  snapshot?.revision ?? 0,
+  null,
+);
+```
+
+The host validates topics and values against the pinned App Definition, assigns revisions, enforces disclosure and grants, reports watch gaps, and suspends access immediately on revocation. Apps cannot publish platform-owned context or define model instructions.
+
+## Opaque-origin frames
 
 A `srcdoc` frame without `allow-same-origin` reports `event.origin === "null"`, which `attachOqtoAppFrame` rejects on purpose. Serve those frames directly instead, delivering `port2` through a path the host already trusts:
 

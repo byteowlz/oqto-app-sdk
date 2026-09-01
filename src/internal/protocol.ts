@@ -2,6 +2,7 @@ import { OqtoAppError, type OqtoAppErrorCode } from "../errors.js";
 import {
   OQTO_APP_PROTOCOL,
   OQTO_APP_PROTOCOL_V1,
+  OQTO_APP_PROTOCOL_V2,
   OQTO_APP_PROTOCOL_VERSIONS,
   type OqtoCapability,
   type OqtoFileRef,
@@ -95,6 +96,7 @@ const CAPABILITIES = new Set<OqtoCapability>([
   "notifications",
   "operations",
   "presentation",
+  "agent_context",
 ]);
 const ERROR_CODES = new Set<OqtoAppErrorCode>([
   "cancelled",
@@ -129,7 +131,12 @@ export function isProtocolVersion(value: unknown): value is OqtoProtocolVersion 
 
 /** True when the negotiated version includes the v1 capability surface. */
 export function supportsV1(protocol: OqtoProtocolVersion): boolean {
-  return protocol === OQTO_APP_PROTOCOL_V1;
+  return protocol === OQTO_APP_PROTOCOL_V1 || protocol === OQTO_APP_PROTOCOL_V2;
+}
+
+/** True when the negotiated version includes App-defined Agent Context. */
+export function supportsV2(protocol: OqtoProtocolVersion): boolean {
+  return protocol === OQTO_APP_PROTOCOL_V2;
 }
 
 export function isReadyMessage(value: unknown): value is ReadyMessage {

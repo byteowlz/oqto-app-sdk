@@ -4,11 +4,18 @@ export const OQTO_APP_PROTOCOL = "oqto-app/v0" as const;
 /** Negotiated protocol adding operations, multi-resource files, and presentation. */
 export const OQTO_APP_PROTOCOL_V1 = "oqto-app/v1" as const;
 
+/** Negotiated protocol adding App-defined Agent Context and contextual actions. */
+export const OQTO_APP_PROTOCOL_V2 = "oqto-app/v2" as const;
+
 /**
  * Versions this SDK can speak, newest first. The host picks one; an older host
  * that ignores the offer keeps the v0 behaviour it already implements.
  */
-export const OQTO_APP_PROTOCOL_VERSIONS = [OQTO_APP_PROTOCOL_V1, OQTO_APP_PROTOCOL] as const;
+export const OQTO_APP_PROTOCOL_VERSIONS = [
+  OQTO_APP_PROTOCOL_V2,
+  OQTO_APP_PROTOCOL_V1,
+  OQTO_APP_PROTOCOL,
+] as const;
 
 export type OqtoProtocolVersion = (typeof OQTO_APP_PROTOCOL_VERSIONS)[number];
 
@@ -36,7 +43,14 @@ export type OqtoFileRef = string & { readonly [fileRefBrand]: true };
 /** Opaque freshness token. Compare only for equality; never parse or order it. */
 export type OqtoFileVersion = string & { readonly [fileVersionBrand]: true };
 
-export type OqtoCapability = "files" | "kv" | "theme" | "notifications" | "operations" | "presentation";
+export type OqtoCapability =
+  | "files"
+  | "kv"
+  | "theme"
+  | "notifications"
+  | "operations"
+  | "presentation"
+  | "agent_context";
 
 export type OqtoResourceAccess = "read" | "readwrite";
 
@@ -281,6 +295,77 @@ export interface OqtoPresentationCapability {
   watch(listener: (context: OqtoPresentationContext) => void): Promise<OqtoUnsubscribe>;
 }
 
+export type OqtoContextLifetime = "ephemeral" | "session_local" | "durable_reference";
+export type OqtoContextDisclosure = "ambient" | "explicit_intent" | "sensitive" | "high_volume";
+
+/** Immutable topic declaration shipped by the pinned App Definition. */
+export interface OqtoContextTopic {
+  readonly id: string;
+  readonly title: string;
+  readonly description?: string;
+  readonly schemaVersion: string;
+  readonly lifetime: OqtoContextLifetime;
+  readonly disclosure: OqtoContextDisclosure;
+}
+
+/** Immutable contextual action declaration shipped by the pinned Definition. */
+export interface OqtoContextAction {
+  readonly id: string;
+  readonly title: string;
+  readonly description?: string;
+  readonly requiredTopics: readonly string[];
+  readonly requiresUserActivation: boolean;
+}
+
+export interface OqtoAgentContextCatalog {
+  readonly providerId: string;
+  readonly topics: readonly OqtoContextTopic[];
+  readonly actions: readonly OqtoContextAction[];
+}
+
+/** Current host-revisioned value of one declared topic. */
+export interface OqtoContextSnapshot {
+  readonly providerId: string;
+  readonly topic: string;
+  readonly revision: number;
+  readonly updatedAt: string;
+  readonly value: JsonValue;
+}
+
+export interface OqtoContextChange {
+  readonly snapshot: OqtoContextSnapshot;
+  /** Monotonic sequence within this subscription. */
+  readonly generation: number;
+  /** True when the subscriber must refresh rather than assume continuity. */
+  readonly gap: boolean;
+}
+
+export type OqtoContextActionResult =
+  | { readonly ok: true; readonly output: JsonValue }
+  | { readonly ok: false; readonly reason: "stale_context"; readonly currentRevision: number }
+  | { readonly ok: false; readonly reason: "failed"; readonly code: string; readonly message: string };
+
+/**
+ * App side of ADR-0044. Publishing only updates typed state; it never wakes an
+ * Agent or inserts a Chat message. Mutation uses revision-bound actions.
+ */
+export interface OqtoAgentContextCapability {
+  catalog(): Promise<OqtoAgentContextCatalog>;
+  get(topic: string): Promise<OqtoContextSnapshot | undefined>;
+  publish(topic: string, value: JsonValue): Promise<OqtoContextSnapshot>;
+  clear(topic: string): Promise<void>;
+  watch(
+    topics: readonly string[],
+    listener: (change: OqtoContextChange) => void,
+    options?: { readonly fromRevision?: number },
+  ): Promise<OqtoUnsubscribe>;
+  invokeAction(
+    id: string,
+    expectedContextRevision: number,
+    input?: JsonValue,
+  ): Promise<OqtoContextActionResult>;
+}
+
 export interface OqtoKvCapability {
   get(key: string): Promise<JsonValue | undefined>;
   set(key: string, value: JsonValue): Promise<void>;
@@ -339,6 +424,7 @@ export interface OqtoHost {
   readonly notifications?: OqtoNotificationsCapability;
   readonly operations?: OqtoOperationsCapability;
   readonly presentation?: OqtoPresentationCapability;
+  readonly agentContext?: OqtoAgentContextCapability;
   readonly closed: Promise<OqtoCloseReason>;
   /** Resolves once the host withdraws authority. Never rejects. */
   readonly suspension: Promise<OqtoSuspension>;
