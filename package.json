@@ -47,6 +47,7 @@
   "scripts": {
     "clean": "rm -rf dist",
     "build": "pnpm clean && tsc -p tsconfig.build.json",
+    "prepare": "tsc -p tsconfig.build.json",
     "typecheck": "tsc -p tsconfig.json --noEmit",
     "format": "biome format --write .",
     "format:check": "biome format .",
