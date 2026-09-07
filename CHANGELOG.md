@@ -1,6 +1,16 @@
 # Changelog
 
-## 0.3.0 — unreleased
+## 0.3.1 — unreleased
+
+Adds `oqto-app-init`, a dependency-free scaffold bin that creates a publishable
+App package (`oqto-app.toml`, presentation source, bundle HTML, offline-friendly
+SDK dependency). Resolution order: `--sdk` flag, then `$OQTO_APP_SDK_PATH`, then
+the newest version directory under `$OQTO_APP_SDK_HOME` (provisioned by
+oqto-usermgr from the oqto-templates pool), then a version-pinned github
+fallback. Ships in the package `files` and as the `oqto-app-init` bin so
+provisioned stores can scaffold without network access.
+
+## 0.3.0
 
 Adds negotiated `oqto-app/v2` and ADR-0044 Agent Context. App Definitions can expose unfamiliar domain topics through a platform-neutral catalog; Apps can publish, clear, read, and resume watches of bounded context values without injecting Chat messages or waking a model. Contextual mutations are separate revision-bound actions with typed stale-context outcomes. The host remains authoritative for schemas, revisions, authorization, disclosure, reconnect gaps, and revocation. React adds `useOqtoContextTopic`. v0/v1 mounts continue to negotiate and reject v2-only methods explicitly.
 

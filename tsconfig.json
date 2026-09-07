@@ -14,7 +14,7 @@
     "verbatimModuleSyntax": true,
     "isolatedModules": true,
     "skipLibCheck": true,
-    "types": ["vitest/globals"],
+    "types": ["vitest/globals", "node"],
     "paths": {
       "@byteowlz/oqto-app-sdk": ["./src/index.ts"],
       "@byteowlz/oqto-app-sdk/host": ["./src/host.ts"],
