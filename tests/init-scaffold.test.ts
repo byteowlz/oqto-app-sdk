@@ -90,7 +90,12 @@ describe("oqto-app-init", () => {
     const root = makeTempRoot();
     run(["beta", "--dir", root]);
     const packageJson = JSON.parse(readFileSync(path.join(root, "beta.oqtoapp", "package.json"), "utf8"));
-    expect(packageJson.dependencies["@byteowlz/oqto-app-sdk"]).toBe("github:byteowlz/oqto-app-sdk#v0.3.1");
+    const ownVersion = JSON.parse(
+      readFileSync(path.join(path.dirname(BIN), "..", "package.json"), "utf8"),
+    ).version;
+    expect(packageJson.dependencies["@byteowlz/oqto-app-sdk"]).toBe(
+      `github:byteowlz/oqto-app-sdk#v${ownVersion}`,
+    );
 
     expect(() => run(["beta", "--dir", root])).toThrow();
     expect(() => run(["beta", "--dir", root, "--force"])).not.toThrow();

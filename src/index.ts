@@ -1,12 +1,12 @@
-export { connectOqtoApp, type ConnectOqtoAppOptions } from "./connect.js";
+export { type ConnectOqtoAppOptions, connectOqtoApp } from "./connect.js";
 export { isOqtoAppError, OqtoAppError, type OqtoAppErrorCode } from "./errors.js";
 export { applyOqtoTheme } from "./theme.js";
 export {
+  type JsonValue,
   OQTO_APP_PROTOCOL,
   OQTO_APP_PROTOCOL_V1,
   OQTO_APP_PROTOCOL_V2,
   OQTO_APP_PROTOCOL_VERSIONS,
-  type JsonValue,
   type OqtoAgentContextCapability,
   type OqtoAgentContextCatalog,
   type OqtoBoundResource,
@@ -30,8 +30,8 @@ export {
   type OqtoFileListPage,
   type OqtoFilePickOptions,
   type OqtoFileRef,
-  type OqtoFilesCapability,
   type OqtoFileStat,
+  type OqtoFilesCapability,
   type OqtoFileVersion,
   type OqtoFileWriteResult,
   type OqtoGrantedOperation,
@@ -46,8 +46,8 @@ export {
   type OqtoOperationFailure,
   type OqtoOperationInvokeOptions,
   type OqtoOperationResult,
-  type OqtoOperationsCapability,
   type OqtoOperationSuccess,
+  type OqtoOperationsCapability,
   type OqtoPresentationCapability,
   type OqtoPresentationContext,
   type OqtoPresentationSurface,

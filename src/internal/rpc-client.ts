@@ -1,7 +1,7 @@
 import { OqtoAppError } from "../errors.js";
 import {
-  OQTO_APP_PROTOCOL,
   type JsonValue,
+  OQTO_APP_PROTOCOL,
   type OqtoAgentContextCatalog,
   type OqtoContextActionResult,
   type OqtoContextChange,
@@ -43,9 +43,9 @@ import {
   parseGrantedResource,
   parsePresentation,
   parseSuspension,
+  type RequestMessage,
   supportsV1,
   supportsV2,
-  type RequestMessage,
 } from "./protocol.js";
 
 interface PendingRequest {

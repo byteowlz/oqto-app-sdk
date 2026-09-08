@@ -3,9 +3,9 @@ import { OqtoAppError } from "../src/errors.js";
 import { serveOqtoAppPort } from "../src/host.js";
 import { connectOqtoAppPort } from "../src/internal/rpc-client.js";
 import {
+  type JsonValue,
   OQTO_APP_PROTOCOL_V1,
   OQTO_APP_PROTOCOL_V2,
-  type JsonValue,
   type OqtoAgentContextCatalog,
   type OqtoContextChange,
   type OqtoContextSnapshot,

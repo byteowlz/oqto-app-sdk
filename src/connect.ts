@@ -1,5 +1,4 @@
 import { OqtoAppError } from "./errors.js";
-import { connectOqtoAppPort } from "./internal/rpc-client.js";
 import {
   CONNECT_KIND,
   isRecord,
@@ -7,6 +6,7 @@ import {
   READY_KIND,
   type ReadyMessage,
 } from "./internal/protocol.js";
+import { connectOqtoAppPort } from "./internal/rpc-client.js";
 import {
   OQTO_APP_PROTOCOL,
   OQTO_APP_PROTOCOL_VERSIONS,

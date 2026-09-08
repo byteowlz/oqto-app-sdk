@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.2 — unreleased
+
+`oqto-app-init` now falls back to `$HOME/.local/share/oqto/app-sdk` (the store
+oqto-usermgr provisions from the oqto-templates pool) when neither
+`$OQTO_APP_SDK_PATH` nor `$OQTO_APP_SDK_HOME` is set — pre-existing managed
+users have the store but not the env var.
+
 ## 0.3.1 — unreleased
 
 Adds `oqto-app-init`, a dependency-free scaffold bin that creates a publishable

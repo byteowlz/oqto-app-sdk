@@ -2,16 +2,16 @@ import { OqtoAppError } from "./errors.js";
 import {
   createOqtoFileRef,
   createOqtoFileVersion,
-  serveOqtoAppPort,
   type OqtoHostAdapter,
   type OqtoHostBridge,
+  serveOqtoAppPort,
 } from "./host.js";
 import { isJsonValue } from "./internal/json.js";
 import { parseHostContext } from "./internal/protocol.js";
 import { connectOqtoAppPort } from "./internal/rpc-client.js";
 import {
-  OQTO_APP_PROTOCOL_V1,
   type JsonValue,
+  OQTO_APP_PROTOCOL_V1,
   type OqtoCapability,
   type OqtoFileChange,
   type OqtoFileContents,

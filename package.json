@@ -1,6 +1,6 @@
 {
   "name": "@byteowlz/oqto-app-sdk",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "Typed, capability-based SDK for sandboxed Oqto Apps",
   "repository": {
     "type": "git",

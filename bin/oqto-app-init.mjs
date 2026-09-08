@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+
 // oqto-app-init — scaffold a capability-bounded Oqto App package.
 //
 // Creates `<dir>/<slug>.oqtoapp/` with a manifest that the current Oqto
@@ -8,15 +9,16 @@
 //
 //   1. `--sdk <spec>` flag wins,
 //   2. then $OQTO_APP_SDK_PATH (used verbatim, e.g. a file: directory),
-//   3. then the newest version directory under $OQTO_APP_SDK_HOME
-//      (provisioned by oqto-usermgr from the oqto-templates pool),
-//   4. finally a github fallback pinned to this SDK's own version.
+//   3. then the newest version directory under $OQTO_APP_SDK_HOME,
+//   4. then $HOME/.local/share/oqto/app-sdk (the store oqto-usermgr
+//      provisions from the oqto-templates pool — no env var required),
+//   5. finally a github fallback pinned to this SDK's own version.
 //
 // No network is required when 2 or 3 apply. This script must stay dependency-
 // free so it can run from a provisioned store on locked-down hosts.
 
-import { mkdir, readdir, stat, writeFile } from "node:fs/promises";
 import { existsSync, readFileSync, rmSync } from "node:fs";
+import { mkdir, readdir, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
@@ -30,6 +32,7 @@ OPTIONS
     --dir <path>     Parent directory for the package (default: ./oqto-apps)
     --sdk <spec>     Dependency spec for @byteowlz/oqto-app-sdk
                      (default: $OQTO_APP_SDK_PATH, then $OQTO_APP_SDK_HOME,
+                     then $HOME/.local/share/oqto/app-sdk/<newest>,
                      then github:byteowlz/oqto-app-sdk#v<version>)
     --force          Replace an existing package directory
     -h, --help       Show this help
@@ -80,6 +83,15 @@ function compareVersions(a, b) {
   return aMajor - bMajor || aMinor - bMinor || aPatch - bPatch || a.localeCompare(b);
 }
 
+async function newestStoreVersion(home) {
+  if (!home || !existsSync(home)) {
+    return undefined;
+  }
+  const versions = (await readdir(home)).filter((entry) => /^\d+\.\d+\.\d+$/.test(entry));
+  const newest = versions.sort(compareVersions).at(-1);
+  return newest ? path.join(home, newest) : undefined;
+}
+
 async function resolveSdkSpec(explicit) {
   if (explicit) {
     return explicit;
@@ -88,12 +100,17 @@ async function resolveSdkSpec(explicit) {
   if (directPath) {
     return `file:${directPath}`;
   }
-  const home = process.env.OQTO_APP_SDK_HOME;
-  if (home && existsSync(home)) {
-    const versions = (await readdir(home)).filter((entry) => /^\d+\.\d+\.\d+$/.test(entry));
-    const newest = versions.sort(compareVersions).at(-1);
-    if (newest) {
-      return `file:${path.join(home, newest)}`;
+  // Managed hosts provision the store here; oqto-usermgr writes the env var
+  // only into fresh dotfiles, so existing users rely on the default path.
+  const fromEnv = await newestStoreVersion(process.env.OQTO_APP_SDK_HOME);
+  if (fromEnv) {
+    return `file:${fromEnv}`;
+  }
+  const home = process.env.HOME;
+  if (home) {
+    const fromHome = await newestStoreVersion(path.join(home, ".local/share/oqto/app-sdk"));
+    if (fromHome) {
+      return `file:${fromHome}`;
     }
   }
   return `github:byteowlz/oqto-app-sdk#v${ownVersion()}`;

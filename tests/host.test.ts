@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
-import { OQTO_APP_PROTOCOL } from "../src/index.js";
-import type { OqtoAppError, OqtoHostContext, OqtoUnsubscribe } from "../src/index.js";
 import { serveOqtoAppPort } from "../src/host.js";
+import type { OqtoAppError, OqtoHostContext, OqtoUnsubscribe } from "../src/index.js";
+import { OQTO_APP_PROTOCOL } from "../src/index.js";
 import { createTestHost } from "../src/testing.js";
 
 const context: OqtoHostContext = {

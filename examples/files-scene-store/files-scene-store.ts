@@ -1,4 +1,4 @@
-import type { OqtoFileRef, OqtoFileVersion, OqtoFilesCapability } from "@byteowlz/oqto-app-sdk";
+import type { OqtoFileRef, OqtoFilesCapability, OqtoFileVersion } from "@byteowlz/oqto-app-sdk";
 
 interface Scene {
   readonly type: "excalidraw";

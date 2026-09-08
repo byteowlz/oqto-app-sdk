@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { attachOqtoAppFrame } from "../src/host.js";
 import {
   connectOqtoApp,
   OQTO_APP_PROTOCOL,
@@ -6,7 +7,6 @@ import {
   OQTO_APP_PROTOCOL_V2,
   OQTO_APP_PROTOCOL_VERSIONS,
 } from "../src/index.js";
-import { attachOqtoAppFrame } from "../src/host.js";
 import { createTestHost } from "../src/testing.js";
 
 function messageEvent(init: {
