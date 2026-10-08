@@ -26,6 +26,9 @@ function run(args: string[], options: RunOptions = {}): string {
   // Keep resolution deterministic regardless of the developer's shell env.
   delete env.OQTO_APP_SDK_HOME;
   delete env.OQTO_APP_SDK_PATH;
+  // The bin also probes $HOME/.local/share/oqto/app-sdk; a real installed
+  // store would otherwise mask the fallback branches under test.
+  env.HOME = makeTempRoot();
   if (options.sdkHome !== undefined) {
     env.OQTO_APP_SDK_HOME = options.sdkHome;
   }

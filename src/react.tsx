@@ -200,9 +200,15 @@ export function useOqtoOperation(id: string): UseOqtoOperation {
     };
   }, []);
 
+  // Cancellation is local and immediate: the hook stops waiting, clears
+  // pending and ignores any late settlement. It signals the handler but does
+  // not guarantee the host rolled back work that already ran.
   const cancel = useCallback(() => {
-    activeRef.current?.controller.abort();
+    const active = activeRef.current;
+    if (!active) return;
     activeRef.current = undefined;
+    active.controller.abort();
+    if (mountedRef.current) setState({ pending: false, result: undefined, error: undefined });
   }, []);
 
   const reset = useCallback(() => {

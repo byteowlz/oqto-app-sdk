@@ -1,5 +1,20 @@
 # Changelog
 
+## Unreleased
+
+### Fixed
+
+- `useOqtoOperation().cancel()` now clears `pending` immediately and leaves
+  `result`/`error` empty; a late settlement from the cancelled invocation is
+  ignored. Cancellation signals the handler but does not imply the host rolled
+  back work that already ran.
+- `applyOqtoTheme` treats each call as a full snapshot: tokens applied by an
+  earlier call and omitted by the next are withdrawn, restoring the inline value
+  (and priority) the root had before the helper first set them. App-owned
+  custom properties are never cleared; ownership is tracked per root.
+- `oqto-app-init` tests now run with a private `HOME`, so an installed
+  `$HOME/.local/share/oqto/app-sdk` store no longer masks the fallback cases.
+
 ## 0.3.2 — unreleased
 
 `oqto-app-init` now falls back to `$HOME/.local/share/oqto/app-sdk` (the store
