@@ -169,6 +169,17 @@ default_binding = "work-directory"
 [presentation.sandboxed-web]
 entry = "bundle/index.html"
 
+# Authority tables: "files", "operations" and "agent_context" each REQUIRE a
+# [capability.<name>] table; "theme" and "kv" take none. To read/write bound
+# work-directory files, add "files" to requested_capabilities and uncomment:
+#
+# [capability.files]
+# [[capability.files.resources]]   # 1..32 resources
+# role = "data"                    # semantic name the App addresses
+# path = "data.json"               # work-directory-relative; no .git/.oqto/oqto-apps
+# access = "read"                  # "read" | "readwrite"
+# watch = true                     # optional, default false
+
 [instance_state]
 versioned = false
 

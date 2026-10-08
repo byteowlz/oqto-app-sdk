@@ -63,6 +63,17 @@ describe("oqto-app-init", () => {
     expect(manifest).toContain('id = "my-tool"');
     expect(manifest).toContain('presentations = ["sandboxed-web"]');
     expect(manifest).toContain('entry = "bundle/index.html"');
+    // The files authority table is shown (commented) where authors add "files".
+    for (const line of [
+      "# [capability.files]",
+      "# [[capability.files.resources]]",
+      '# role = "data"',
+      '# path = "data.json"',
+      '# access = "read"',
+      "# watch = true",
+    ]) {
+      expect(manifest).toContain(line);
+    }
 
     const packageJson = JSON.parse(readFileSync(path.join(target, "package.json"), "utf8"));
     expect(packageJson.dependencies["@byteowlz/oqto-app-sdk"]).toBe("file:/sdk/store/0.3.1");
