@@ -3,3 +3,6 @@ dist/
 *.tgz
 coverage/
 .DS_Store
+
+# trx ledger lives in the central store
+.trx/
