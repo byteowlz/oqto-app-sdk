@@ -1,5 +1,17 @@
 # Changelog
 
+## 0.3.4 — 2026-10-11
+
+### Changed
+
+- `oqto-app-init` vendors a resolvable local SDK into `<app>/_sdk/` and
+  depends on `file:./_sdk`, so a scaffolded App is self-contained and builds
+  offline on any machine, with no absolute or machine-specific paths. The
+  github fallback is used only when no local SDK exists.
+- `applyOqtoTheme` also declares tokens on the document root, so portals,
+  shadow roots and teleported nodes are themed; the app root keeps its
+  dataset and inline variables.
+
 ## 0.3.3 — 2026-10-11
 
 First release published to npm (`@byteowlz/oqto-app-sdk`); see

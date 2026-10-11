@@ -19,6 +19,7 @@ function makeTempRoot(): string {
 type RunOptions = {
   sdkHome?: string;
   sdkPath?: string;
+  home?: string;
 };
 
 function run(args: string[], options: RunOptions = {}): string {
@@ -34,6 +35,9 @@ function run(args: string[], options: RunOptions = {}): string {
   }
   if (options.sdkPath !== undefined) {
     env.OQTO_APP_SDK_PATH = options.sdkPath;
+  }
+  if (options.home !== undefined) {
+    env.HOME = options.home;
   }
   return execFileSync(process.execPath, [BIN, ...args], {
     encoding: "utf8",
@@ -102,7 +106,9 @@ describe("oqto-app-init", () => {
 
   it("falls back to a version-pinned github spec and refuses collisions", () => {
     const root = makeTempRoot();
-    run(["beta", "--dir", root]);
+    // Isolate HOME so no local app-sdk store exists -> github fallback.
+    const home = makeTempRoot();
+    run(["beta", "--dir", root], { home });
     const packageJson = JSON.parse(readFileSync(path.join(root, "beta.oqtoapp", "package.json"), "utf8"));
     const ownVersion = JSON.parse(
       readFileSync(path.join(path.dirname(BIN), "..", "package.json"), "utf8"),
@@ -111,8 +117,8 @@ describe("oqto-app-init", () => {
       `github:byteowlz/oqto-app-sdk#v${ownVersion}`,
     );
 
-    expect(() => run(["beta", "--dir", root])).toThrow();
-    expect(() => run(["beta", "--dir", root, "--force"])).not.toThrow();
+    expect(() => run(["beta", "--dir", root], { home })).toThrow();
+    expect(() => run(["beta", "--dir", root, "--force"], { home })).not.toThrow();
   });
 
   it("slugifies names and ships the bin executable", () => {

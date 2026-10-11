@@ -4,21 +4,25 @@
 //
 // Creates `<dir>/<slug>.oqtoapp/` with a manifest that the current Oqto
 // runtime accepts (schema oqto-app/v0, sandboxed-web presentation, work-
-// directory binding), a minimal but real presentation App, and a package.json
-// whose SDK dependency resolves offline on managed hosts:
+// directory binding), a minimal but real presentation App, and a portable
+// SDK dependency that resolves offline and has no absolute path:
 //
-//   1. `--sdk <spec>` flag wins,
-//   2. then $OQTO_APP_SDK_PATH (used verbatim, e.g. a file: directory),
-//   3. then the newest version directory under $OQTO_APP_SDK_HOME,
-//   4. then $HOME/.local/share/oqto/app-sdk (the store oqto-usermgr
-//      provisions from the oqto-templates pool — no env var required),
-//   5. finally a github fallback pinned to this SDK's own version.
+//   When a local SDK package is resolvable (in order: `--sdk file:...`,
+//   $OQTO_APP_SDK_PATH, newest under $OQTO_APP_SDK_HOME, then
+//   $HOME/.local/share/oqto/app-sdk — the store oqto-usermgr provisions from
+//   the templates pool), this scaffold VENDORS it into `<app>/_sdk/` and
+//   depends on "file:./_sdk". The App is then fully self-contained and builds
+//   on any machine or container with no network.
 //
-// No network is required when 2 or 3 apply. This script must stay dependency-
-// free so it can run from a provisioned store on locked-down hosts.
+//   Only when no local SDK exists does it fall back to a github dependency
+//   pinned to this SDK's own version.
+//
+// No network is required whenever a local SDK is present. This script must
+// stay dependency-free so it can run from a provisioned store on locked-down
+// hosts.
 
+import { cp, mkdir, readdir, stat, writeFile } from "node:fs/promises";
 import { existsSync, readFileSync, rmSync } from "node:fs";
-import { mkdir, readdir, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
 import process from "node:process";
 import { fileURLToPath } from "node:url";
@@ -34,6 +38,10 @@ OPTIONS
                      (default: $OQTO_APP_SDK_PATH, then $OQTO_APP_SDK_HOME,
                      then $HOME/.local/share/oqto/app-sdk/<newest>,
                      then github:byteowlz/oqto-app-sdk#v<version>)
+
+    When a local SDK is resolvable it is vendored into <app>/_sdk/ and the
+    package depends on "file:./_sdk", so each App is self-contained and
+    portable (no absolute or machine-specific paths).
     --force          Replace an existing package directory
     -h, --help       Show this help
 
@@ -67,13 +75,17 @@ function tomlString(raw) {
     .trim();
 }
 
-function ownVersion() {
-  const packageJson = path.join(path.dirname(fileURLToPath(import.meta.url)), "..", "package.json");
+function packageVersion(packageRoot) {
   try {
+    const packageJson = path.join(packageRoot, "package.json");
     return JSON.parse(readFileSync(packageJson, "utf8")).version ?? "0.0.0";
   } catch {
     return "0.0.0";
   }
+}
+
+function ownVersion() {
+  return packageVersion(path.join(path.dirname(fileURLToPath(import.meta.url)), ".."));
 }
 
 function compareVersions(a, b) {
@@ -92,28 +104,99 @@ async function newestStoreVersion(home) {
   return newest ? path.join(home, newest) : undefined;
 }
 
-async function resolveSdkSpec(explicit) {
+function isFileSpec(spec) {
+  return typeof spec === "string" && /^file:/i.test(spec);
+}
+
+function stripFileSpec(spec) {
+  return spec.replace(/^file:/i, "");
+}
+
+// Resolve the SDK dependency. Returns { spec, localPath }: `spec` is the
+// package.json dependency value; `localPath` is the SDK package directory when
+// a local copy is available (so the scaffold can vendor it for portability).
+async function resolveSdk(explicit) {
+  let spec;
+  let localPath;
   if (explicit) {
-    return explicit;
-  }
-  const directPath = process.env.OQTO_APP_SDK_PATH;
-  if (directPath) {
-    return `file:${directPath}`;
-  }
-  // Managed hosts provision the store here; oqto-usermgr writes the env var
-  // only into fresh dotfiles, so existing users rely on the default path.
-  const fromEnv = await newestStoreVersion(process.env.OQTO_APP_SDK_HOME);
-  if (fromEnv) {
-    return `file:${fromEnv}`;
-  }
-  const home = process.env.HOME;
-  if (home) {
-    const fromHome = await newestStoreVersion(path.join(home, ".local/share/oqto/app-sdk"));
-    if (fromHome) {
-      return `file:${fromHome}`;
+    spec = explicit;
+    if (isFileSpec(spec)) {
+      localPath = stripFileSpec(spec);
+    }
+  } else {
+    const directPath = process.env.OQTO_APP_SDK_PATH;
+    if (directPath) {
+      localPath = directPath;
+      spec = `file:${directPath}`;
+    } else {
+      // Managed hosts provision the store here; oqto-usermgr writes the env
+      // var only into fresh dotfiles, so existing users rely on the default
+      // path.
+      const fromEnv = await newestStoreVersion(process.env.OQTO_APP_SDK_HOME);
+      if (fromEnv) {
+        localPath = fromEnv;
+        spec = `file:${fromEnv}`;
+      } else {
+        const home = process.env.HOME;
+        if (home) {
+          const fromHome = await newestStoreVersion(path.join(home, ".local/share/oqto/app-sdk"));
+          if (fromHome) {
+            localPath = fromHome;
+            spec = `file:${fromHome}`;
+          }
+        }
+      }
     }
   }
-  return `github:byteowlz/oqto-app-sdk#v${ownVersion()}`;
+  if (!spec) {
+    spec = `github:byteowlz/oqto-app-sdk#v${ownVersion()}`;
+  }
+  return { spec, localPath };
+}
+
+// Copy a resolvable SDK package's `dist/` into `<target>/_sdk/` and write a
+// minimal package.json so `file:./_sdk` resolves the same subpaths (".",
+// "./testing", "./host") offline and on any machine. Returns the vendor
+// manifest, or undefined when the resolvable path has no dist/ (the caller
+// then falls back to a non-vendored spec).
+async function vendorSdk(packageRoot, target) {
+  const distRoot = path.join(packageRoot, "dist");
+  if (!existsSync(distRoot)) {
+    return undefined;
+  }
+  const version = packageVersion(packageRoot);
+  const vendorRoot = path.join(target, "_sdk");
+  await mkdir(path.join(vendorRoot, "dist"), { recursive: true });
+  const entries = await readdir(distRoot, { withFileTypes: true });
+  for (const entry of entries) {
+    const source = path.join(distRoot, entry.name);
+    const destination = path.join(vendorRoot, "dist", entry.name);
+    if (entry.isDirectory()) {
+      await cp(source, destination, { recursive: true });
+    } else if (entry.isFile() && !/\.map$/.test(entry.name)) {
+      // Copy runtime + types; skip source maps for a lean portable vendor.
+      await cp(source, destination);
+    }
+  }
+  const manifest = {
+    name: "@byteowlz/oqto-app-sdk",
+    version,
+    private: true,
+    type: "module",
+    sideEffects: false,
+    exports: {
+      ".": { types: "./dist/index.d.ts", import: "./dist/index.js", default: "./dist/index.js" },
+      "./host": { types: "./dist/host.d.ts", import: "./dist/host.js", default: "./dist/host.js" },
+      "./testing": {
+        types: "./dist/testing.d.ts",
+        import: "./dist/testing.js",
+        default: "./dist/testing.js",
+      },
+      "./package.json": "./package.json",
+    },
+  };
+  await writeFile(path.join(vendorRoot, "package.json"), `${JSON.stringify(manifest, null, 2)}\n`);
+  return manifest;
 }
 
 function parseArgs(argv) {
@@ -269,25 +352,51 @@ function indexHtmlTemplate(title) {
 				color-scheme: light dark;
 			}
 			body {
-				font-family: system-ui, sans-serif;
+				font-family: var(--font-sans, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif);
+				background: var(--background);
+				color: var(--foreground);
 				display: grid;
 				place-items: center;
 				min-height: 100vh;
 				margin: 0;
 			}
 			main {
-				text-align: center;
 				display: grid;
 				gap: 0.75rem;
-				padding: 1rem;
+				padding: 2rem;
+				min-width: min(24rem, calc(100vw - 2rem));
+				background: var(--card);
+				color: var(--card-foreground);
+				border: 1px solid var(--border);
+				border-radius: var(--radius-lg, 0.75rem);
+				box-shadow: var(--shadow-md, 0 1px 2px rgb(0 0 0 / 0.06), 0 8px 24px rgb(0 0 0 / 0.08));
+			}
+			h1 {
+				margin: 0;
+				font-size: 1.25rem;
+				font-weight: 650;
+				letter-spacing: -0.01em;
 			}
 			#counter {
 				font: inherit;
+				font-weight: 550;
 				padding: 0.6rem 1.2rem;
 				cursor: pointer;
+				color: var(--primary-foreground);
+				background: var(--primary);
+				border: 1px solid transparent;
+				border-radius: var(--radius-md, 0.5rem);
+				transition: filter 0.15s ease;
+			}
+			#counter:hover {
+				filter: brightness(1.08);
+			}
+			#counter:focus-visible {
+				outline: 3px solid color-mix(in srgb, var(--ring) 55%, transparent);
+				outline-offset: 2px;
 			}
 			#status {
-				opacity: 0.6;
+				color: var(--muted-foreground);
 				font-size: 0.8rem;
 			}
 		</style>
@@ -307,7 +416,9 @@ function indexHtmlTemplate(title) {
 function readmeTemplate(slug) {
   return `# ${slug}
 
-An Oqto App scaffolded with \`oqto-app-init\`.
+An Oqto App scaffolded with \`oqto-app-init\`. The SDK is vendored into
+\`_sdk/\` (a self-contained, portable copy of \`@byteowlz/oqto-app-sdk\`), so
+builds need no network and no machine-specific path.
 
 ## Build
 
@@ -316,8 +427,9 @@ bun install
 bun run build
 \`\`\`
 
-On managed hosts the SDK dependency resolves from the provisioned offline
-store (\`$OQTO_APP_SDK_HOME\`) and needs no network.
+\`bun install\` resolves \`@byteowlz/oqto-app-sdk\` from \`file:./_sdk\` (offline).
+To bump the SDK, re-run \`oqto-app-init --force\` or replace \`_sdk/dist\` and the
+\`_sdk/package.json\` in place, then \`bun install && bun run build\`.
 
 ## Open in Oqto
 
@@ -358,7 +470,15 @@ async function main() {
   const title = options.name.trim();
   const target = path.resolve(options.dir, `${slug}.oqtoapp`);
   await assertFreshTarget(target, options.force);
-  const sdkSpec = await resolveSdkSpec(options.sdk);
+  const { spec, localPath } = await resolveSdk(options.sdk);
+  let sdkSpec = spec;
+  // Portable, offline SDK: vendor the resolvable dist/ into _sdk/ and depend
+  // on it relatively so the App builds on any machine/container with no
+  // network and no absolute path.
+  const vendored = localPath ? await vendorSdk(localPath, target) : undefined;
+  if (vendored) {
+    sdkSpec = "file:./_sdk";
+  }
 
   const files = new Map([
     ["oqto-app.toml", manifestTemplate(slug, title)],
@@ -377,6 +497,9 @@ async function main() {
     [
       `created ${target}`,
       `sdk dependency: ${sdkSpec}`,
+      vendored
+        ? "sdk: vendored into ./_sdk (portable, offline)"
+        : "sdk: resolved via spec (no local dist/ to vendor)",
       "next:",
       "  1. bun install && bun run build",
       "  2. place the package in <work-directory>/oqto-apps/ (if not already there)",

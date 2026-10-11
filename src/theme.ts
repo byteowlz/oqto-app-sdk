@@ -10,7 +10,11 @@ interface PriorValue {
 const owned = new WeakMap<HTMLElement, Map<string, PriorValue>>();
 
 /**
- * Apply a host theme to one app root without mutating global document state.
+ * Apply a host theme to an app root and to its document root.
+ *
+ * The theme must reach the whole app document (portals, shadow roots,
+ * teleported nodes), so tokens are declared at the document root too; the app
+ * root still gets the dataset and inline vars for direct access.
  *
  * Each call is a full snapshot, not a patch: a token applied by an earlier call
  * and omitted by this one is withdrawn. Withdrawal restores the inline value the
@@ -19,6 +23,12 @@ const owned = new WeakMap<HTMLElement, Map<string, PriorValue>>();
  * custom properties are applied; other names are ignored.
  */
 export function applyOqtoTheme(element: HTMLElement, theme: OqtoThemeSnapshot): void {
+  const root = element.ownerDocument?.documentElement;
+  if (root && root !== element) applySnapshot(root, theme);
+  applySnapshot(element, theme);
+}
+
+function applySnapshot(element: HTMLElement, theme: OqtoThemeSnapshot): void {
   const style = element.style;
   let applied = owned.get(element);
   if (!applied) {

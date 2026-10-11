@@ -65,4 +65,21 @@ describe("applyOqtoTheme", () => {
     expect(first.style.getPropertyValue("--oqto-accent")).toBe("");
     expect(second.style.getPropertyValue("--oqto-accent")).toBe("red");
   });
+
+  it("declares tokens at the document root too and withdraws them there", () => {
+    const doc = document.implementation.createHTMLDocument();
+    const element = doc.createElement("div");
+    doc.body.append(element);
+    applyOqtoTheme(element, {
+      colorScheme: "dark",
+      tokens: { "--oqto-bg": "black", "--oqto-accent": "red" },
+    });
+    // Portals/shadow roots inherit from the document root.
+    expect(doc.documentElement.dataset.oqtoColorScheme).toBe("dark");
+    expect(doc.documentElement.style.getPropertyValue("--oqto-accent")).toBe("red");
+
+    applyOqtoTheme(element, { colorScheme: "light", tokens: { "--oqto-bg": "white" } });
+    expect(doc.documentElement.style.getPropertyValue("--oqto-bg")).toBe("white");
+    expect(doc.documentElement.style.getPropertyValue("--oqto-accent")).toBe("");
+  });
 });
