@@ -18,12 +18,7 @@
   "files": [
     "bin",
     "dist",
-    "src",
-    "CHANGELOG.md",
-    "CONTEXT.md",
-    "README.md",
-    "SECURITY.md",
-    "LICENSE"
+    "CHANGELOG.md"
   ],
   "exports": {
     ".": {
