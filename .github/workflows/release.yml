@@ -1,0 +1,57 @@
+name: Release
+
+# Publishes @byteowlz/oqto-app-sdk to npm when a v* tag is pushed.
+# Auth: npm trusted publishing (GitHub OIDC) with provenance; no stored token.
+# See docs/adr/0001-publish-sdk-to-npm.md.
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: read
+  id-token: write # OIDC for npm trusted publishing + provenance
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    runs-on: ubuntu-latest
+    environment: npm
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 11.3.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: pnpm
+          registry-url: https://registry.npmjs.org
+
+      - name: Tag must equal package.json version
+        run: |
+          version="$(node -p 'require("./package.json").version')"
+          if [ "${GITHUB_REF_NAME}" != "v${version}" ]; then
+            echo "::error::tag ${GITHUB_REF_NAME} does not match package.json version ${version}"
+            exit 1
+          fi
+          if npm view "@byteowlz/oqto-app-sdk@${version}" version >/dev/null 2>&1; then
+            echo "::error::@byteowlz/oqto-app-sdk@${version} is already published"
+            exit 1
+          fi
+
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm check
+
+      # Trusted publishing needs npm >= 11.5.1; the bundled npm may be older.
+      - run: npm install -g "npm@>=11.5.1"
+      - run: npm publish --provenance --access public
+        env:
+          # Bootstrap only: npm attaches a trusted publisher to an existing
+          # package, so the very first version may use a granular NPM_TOKEN
+          # secret. Once the trusted publisher is configured, delete the secret;
+          # with it unset, npm authenticates via OIDC.
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}

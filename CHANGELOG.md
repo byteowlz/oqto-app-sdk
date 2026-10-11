@@ -1,6 +1,9 @@
 # Changelog
 
-## Unreleased
+## 0.3.3 — 2026-10-11
+
+First release published to npm (`@byteowlz/oqto-app-sdk`); see
+`docs/adr/0001-publish-sdk-to-npm.md`.
 
 ### Fixed
 
