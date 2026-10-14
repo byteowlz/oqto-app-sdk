@@ -5,6 +5,7 @@ default:
 
 # Format, lint, typecheck, test and validate the package (the CI gate).
 check:
+    bash scripts/test-verify-npm-publication.sh
     pnpm check
 
 # The working tree is never packed. Normal releases are the tag-triggered CI
@@ -14,6 +15,7 @@ check:
 npm-publish:
     #!/usr/bin/env bash
     set -euo pipefail
+    repo="$(pwd)"
     name="$(node -p 'require("./package.json").name')"
     version="$(node -p 'require("./package.json").version')"
     tag="v${version}"
@@ -38,4 +40,4 @@ npm-publish:
     [[ "${answer}" == [yY] ]] || { echo "aborted"; exit 1; }
     # Provenance can only be generated in CI; this manual path publishes without it.
     npm publish --provenance=false --access public
-    npm view "${name}@${version}" version
+    bash "${repo}/scripts/verify-npm-publication.sh" "$name" "$version"
